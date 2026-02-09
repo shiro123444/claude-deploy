@@ -1,5 +1,9 @@
 # Claude Relay
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://golang.org)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-blue)](#)
+
 一个轻量级工具，让你在 VSCode 的 Claude Agent 中使用第三方 API 提供商。
 
 ## 解决的问题
@@ -119,6 +123,20 @@ make cross
 - **应用配置**: `~/.claude-relay/config.json`
 - **Claude 设置**: `~/.claude/settings.json`（部署时生成）
 - **VSCode 设置**: 部署时自动写入 Machine settings
+
+## 预览
+
+### 主页面 - URL 配置
+![主页面](picture/1.png)
+
+### 映射区 - 模型 ID 映射
+![映射区](picture/2.png)
+
+### 目标管理 - 部署目标
+![目标管理](picture/3.png)
+
+### MCP 管理 - MCP Servers 配置
+![MCP 管理](picture/4.png)
 
 ## License
 
