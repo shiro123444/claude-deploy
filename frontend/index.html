@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Relay</title>
+  <script src="static/alpine.min.js" defer></script>
+  <style>
+    /* ===== Design tokens ===== */
+    :root {
+      --bg-base:    #0F172A;
+      --bg-surface: #1E293B;
+      --bg-raised:  #334155;
+      --bg-input:   #1E293B;
+      --border:     #475569;
+      --border-dim: #334155;
+      --text:       #F8FAFC;
+      --text-dim:   #94A3B8;
+      --text-muted: #64748B;
+      --accent:     #22C55E;
+      --accent-dim: #16A34A;
+      --danger:     #EF4444;
+      --danger-dim: #DC2626;
+      --warn:       #F59E0B;
+      --info:       #3B82F6;
+      --radius:     8px;
+      --radius-lg:  12px;
+      --transition: 200ms ease;
+      --font-mono:  'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+      --font-sans:  -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    }
+
+    /* ===== Reset ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 14px; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-base);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ===== Scrollbar ===== */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--bg-raised); border-radius: 3px; }
+
+    /* ===== Layout ===== */
+    .shell {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 24px 20px 64px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 32px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border-dim);
+    }
+    header .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    header .logo svg { flex-shrink: 0; }
+    header .logo h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    header .logo h1 span { color: var(--accent); }
+    header .version {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      background: var(--bg-surface);
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+
+    /* ===== Tabs ===== */
+    .tabs {
+      display: flex;
+      gap: 2px;
+      background: var(--bg-surface);
+      border-radius: var(--radius);
+      padding: 3px;
+      margin-bottom: 24px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      font-weight: 500;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .tab-btn:hover { color: var(--text); background: var(--bg-raised); }
+    .tab-btn.active {
+      background: var(--accent);
+      color: #0F172A;
+      font-weight: 600;
+    }
+    .tab-btn svg { width: 16px; height: 16px; }
+
+    /* ===== Cards ===== */
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-dim);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-title svg { width: 16px; height: 16px; color: var(--accent); }
+
+    /* ===== Form controls ===== */
+    .field { margin-bottom: 14px; }
+    .field:last-child { margin-bottom: 0; }
+    .field label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--text-dim);
+      margin-bottom: 5px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="url"],
+    select {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--bg-input);
+      border: 1px solid var(--border-dim);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 0.87rem;
+      font-family: var(--font-mono);
+      transition: border-color var(--transition);
+      outline: none;
+    }
+    input:focus, select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.15);
+    }
+    input::placeholder { color: var(--text-muted); }
+
+    select {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 30px;
+    }
+
+    /* ===== Buttons ===== */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--transition);
+      line-height: 1;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn svg { width: 14px; height: 14px; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0F172A;
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-dim); }
+
+    .btn-secondary {
+      background: var(--bg-raised);
+      color: var(--text);
+      border: 1px solid var(--border-dim);
+    }
+    .btn-secondary:hover:not(:disabled) { background: var(--border); }
+
+    .btn-danger {
+      background: transparent;
+      color: var(--danger);
+      border: 1px solid var(--danger);
+    }
+    .btn-danger:hover:not(:disabled) { background: var(--danger); color: white; }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-dim);
+      padding: 6px 8px;
+    }
+    .btn-ghost:hover:not(:disabled) { color: var(--text); background: var(--bg-raised); }
+
+    .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
+    .btn-icon { padding: 6px; }
+
+    /* ===== Inline row ===== */
+    .row { display: flex; gap: 10px; align-items: end; }
+    .row .field { flex: 1; margin-bottom: 0; }
+
+    .row-between {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* ===== Mapping table ===== */
+    .mapping-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .mapping-table th {
+      text-align: left;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      padding: 0 8px 8px;
+    }
+    .mapping-table td {
+      padding: 4px 8px;
+    }
+    .mapping-table tr + tr td { padding-top: 6px; }
+    .mapping-table input {
+      width: 100%;
+    }
+    .mapping-arrow {
+      color: var(--accent);
+      font-family: var(--font-mono);
+      text-align: center;
+      font-size: 0.9rem;
+    }
+
+    /* ===== Target cards ===== */
+    .target-card {
+      background: var(--bg-base);
+      border: 1px solid var(--border-dim);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: border-color var(--transition);
+    }
+    .target-card:hover { border-color: var(--border); }
+    .target-info { display: flex; align-items: center; gap: 10px; }
+    .target-name {
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .target-badge {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: var(--bg-raised);
+      color: var(--text-dim);
+    }
+    .target-badge.local { color: var(--accent); background: rgba(34,197,94,0.12); }
+    .target-badge.ssh { color: var(--info); background: rgba(59,130,246,0.12); }
+    .target-badge.codespace { color: var(--warn); background: rgba(245,158,11,0.12); }
+
+    /* ===== Status dots ===== */
+    .status-row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.78rem;
+      color: var(--text-dim);
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot.on { background: var(--accent); box-shadow: 0 0 6px rgba(34,197,94,0.4); }
+    .dot.off { background: var(--text-muted); }
+
+    /* ===== Toast ===== */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 20px;
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: white;
+      z-index: 1000;
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all 300ms ease;
+      max-width: 380px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.success { background: var(--accent-dim); }
+    .toast.error { background: var(--danger-dim); }
+    .toast.info { background: var(--info); }
+
+    /* ===== Spinner ===== */
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.25);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== Add target form ===== */
+    .add-target-form {
+      background: var(--bg-base);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-top: 12px;
+    }
+
+    /* ===== MCP server row ===== */
+    .mcp-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--bg-base);
+      border: 1px solid var(--border-dim);
+      border-radius: var(--radius);
+      margin-bottom: 8px;
+    }
+    .mcp-row .mcp-name {
+      font-weight: 600;
+      font-size: 0.87rem;
+      min-width: 90px;
+    }
+    .mcp-row .mcp-cmd {
+      flex: 1;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Toggle switch */
+    .toggle {
+      position: relative;
+      width: 36px; height: 20px;
+      border-radius: 10px;
+      background: var(--bg-raised);
+      cursor: pointer;
+      transition: background var(--transition);
+      flex-shrink: 0;
+    }
+    .toggle.on { background: var(--accent); }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: white;
+      transition: transform var(--transition);
+    }
+    .toggle.on::after { transform: translateX(16px); }
+
+    /* ===== Empty state ===== */
+    .empty {
+      text-align: center;
+      padding: 32px 16px;
+      color: var(--text-muted);
+      font-size: 0.87rem;
+    }
+
+    /* ===== Detected model list ===== */
+    .model-chip {
+      display: inline-block;
+      padding: 4px 10px;
+      margin: 3px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      background: var(--bg-base);
+      border: 1px solid var(--border-dim);
+      border-radius: 6px;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .model-chip:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ===== Section spacer ===== */
+    .spacer { height: 8px; }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 640px) {
+      .shell { padding: 16px 12px 48px; }
+      .row { flex-direction: column; }
+      .tabs { gap: 1px; }
+      .tab-btn { padding: 7px 6px; font-size: 0.78rem; }
+      .status-row { gap: 10px; }
+    }
+
+    /* ===== Reduced motion ===== */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+    }
+
+    /* ===== Focus ===== */
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+
+<body x-data="app()" x-init="init()">
+
+  <!-- ===== Toast ===== -->
+  <div class="toast" :class="[toast.show ? 'show' : '', toast.type]" x-text="toast.msg"></div>
+
+  <div class="shell">
+    <!-- ===== Header ===== -->
+    <header>
+      <div class="logo">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent)">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+        </svg>
+        <h1>Claude <span>Relay</span></h1>
+      </div>
+      <span class="version">v1.0.0</span>
+    </header>
+
+    <!-- ===== Tabs ===== -->
+    <div class="tabs" role="tablist">
+      <button class="tab-btn" :class="tab === 'config' && 'active'" @click="tab = 'config'" role="tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Config
+      </button>
+      <button class="tab-btn" :class="tab === 'mappings' && 'active'" @click="tab = 'mappings'" role="tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+        Mappings
+      </button>
+      <button class="tab-btn" :class="tab === 'targets' && 'active'" @click="tab = 'targets'" role="tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        Targets
+      </button>
+      <button class="tab-btn" :class="tab === 'mcp' && 'active'" @click="tab = 'mcp'" role="tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>
+        MCP
+      </button>
+    </div>
+
+    <!-- ===== TAB: Config ===== -->
+    <div x-show="tab === 'config'" x-transition.opacity.duration.200ms>
+      <!-- API Connection -->
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          API Connection
+        </div>
+        <div class="field">
+          <label for="base-url">Base URL</label>
+          <input id="base-url" type="url" x-model="cfg.base_url" placeholder="https://api.anthropic.com">
+        </div>
+        <div class="field">
+          <label for="api-key">API Key</label>
+          <input id="api-key" type="password" x-model="cfg.api_key" placeholder="sk-...">
+        </div>
+      </div>
+
+      <!-- Default Models -->
+      <div class="card">
+        <div class="row-between" style="margin-bottom:14px">
+          <div class="card-title" style="margin-bottom:0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            Default Models
+          </div>
+          <button class="btn btn-secondary btn-sm" x-show="suggestedOpus || suggestedSonnet || suggestedHaiku" @click="applySuggestedDefaults()">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            Apply Suggested
+          </button>
+        </div>
+        <p style="font-size:0.82rem; color:var(--text-dim); margin-bottom:12px">
+          Bind each tier independently. These map to <code style="color:var(--accent); font-family:var(--font-mono)">ANTHROPIC_DEFAULT_*_MODEL</code> env vars in <code style="color:var(--accent); font-family:var(--font-mono)">~/.claude/settings.json</code>.
+        </p>
+        <div class="field">
+          <label for="opus-model">Opus Model (ANTHROPIC_DEFAULT_OPUS_MODEL)</label>
+          <input id="opus-model" type="text" x-model="cfg.default_opus_model" placeholder="claude-opus-4-6-20260205">
+        </div>
+        <div class="field">
+          <label for="sonnet-model">Sonnet Model (ANTHROPIC_DEFAULT_SONNET_MODEL)</label>
+          <input id="sonnet-model" type="text" x-model="cfg.default_sonnet_model" placeholder="claude-sonnet-4-5-20250929">
+        </div>
+        <div class="field">
+          <label for="haiku-model">Haiku Model (ANTHROPIC_DEFAULT_HAIKU_MODEL + SMALL_FAST)</label>
+          <input id="haiku-model" type="text" x-model="cfg.default_haiku_model" placeholder="claude-haiku-4-5-20251001">
+        </div>
+      </div>
+
+      <!-- Detect Models -->
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Model Detection
+        </div>
+        <p style="font-size:0.82rem; color:var(--text-dim); margin-bottom:12px">
+          Detect available models from your API endpoint. Requires Base URL and API Key.
+        </p>
+        <div class="actions">
+          <button class="btn btn-secondary btn-sm" @click="detectModels()" :disabled="detecting">
+            <template x-if="detecting"><span class="spinner"></span></template>
+            <template x-if="!detecting">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </template>
+            <span x-text="detecting ? 'Detecting...' : 'Detect Models'"></span>
+          </button>
+        </div>
+        <div x-show="detectedModels.length > 0" style="margin-top:12px">
+          <div style="display:flex; flex-wrap:wrap; gap:2px">
+            <template x-for="m in detectedModels" :key="m.id">
+              <span class="model-chip" @click="copyToClipboard(m.id)" :title="'Click to copy: ' + m.id" x-text="m.id"></span>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save -->
+      <div class="actions" style="margin-top:8px">
+        <button class="btn btn-primary" @click="saveConfig()" :disabled="saving">
+          <template x-if="saving"><span class="spinner"></span></template>
+          <template x-if="!saving">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          </template>
+          Save Configuration
+        </button>
+      </div>
+    </div>
+
+    <!-- ===== TAB: Mappings ===== -->
+    <div x-show="tab === 'mappings'" x-transition.opacity.duration.200ms>
+      <div class="card">
+        <div class="row-between" style="margin-bottom:14px">
+          <div class="card-title" style="margin-bottom:0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/></svg>
+            Model ID Mappings
+          </div>
+          <button class="btn btn-secondary btn-sm" @click="addMapping()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add
+          </button>
+        </div>
+        <p style="font-size:0.82rem; color:var(--text-dim); margin-bottom:14px">
+          Map VSCode's hardcoded model IDs to your API provider's actual model IDs.
+          The extension sends the left ID; the patch rewrites it to the right ID.
+        </p>
+        <table class="mapping-table" x-show="cfg.model_mappings && cfg.model_mappings.length > 0">
+          <thead>
+            <tr>
+              <th style="width:42%">VSCode Sends</th>
+              <th style="width:8%"></th>
+              <th style="width:42%">API Receives</th>
+              <th style="width:8%"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(m, i) in cfg.model_mappings" :key="i">
+              <tr>
+                <td><input type="text" x-model="m.vscode_id" placeholder="claude-opus-4.6"></td>
+                <td class="mapping-arrow">&rarr;</td>
+                <td><input type="text" x-model="m.relay_id" placeholder="claude-opus-4-6"></td>
+                <td>
+                  <button class="btn btn-ghost btn-icon" @click="removeMapping(i)" title="Remove mapping">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--danger)" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div class="empty" x-show="!cfg.model_mappings || cfg.model_mappings.length === 0">
+          No mappings configured. Click "Add" to create one.
+        </div>
+      </div>
+
+      <!-- Auto-suggest -->
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Quick Actions
+        </div>
+        <div class="actions">
+          <button class="btn btn-secondary btn-sm" @click="suggestMappings()" :disabled="detecting">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            Auto-detect &amp; Suggest
+          </button>
+          <button class="btn btn-secondary btn-sm" @click="resetMappings()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            Reset to Defaults
+          </button>
+        </div>
+      </div>
+
+      <div class="actions" style="margin-top:8px">
+        <button class="btn btn-primary" @click="saveConfig()" :disabled="saving">
+          <template x-if="saving"><span class="spinner"></span></template>
+          Save Mappings
+        </button>
+      </div>
+    </div>
+
+    <!-- ===== TAB: Targets ===== -->
+    <div x-show="tab === 'targets'" x-transition.opacity.duration.200ms>
+      <div class="card">
+        <div class="row-between" style="margin-bottom:14px">
+          <div class="card-title" style="margin-bottom:0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>
+            Deploy Targets
+          </div>
+          <button class="btn btn-secondary btn-sm" @click="showAddTarget = !showAddTarget">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Target
+          </button>
+        </div>
+
+        <!-- Target list -->
+        <template x-for="t in cfg.targets" :key="t.name">
+          <div class="target-card">
+            <div style="flex:1">
+              <div class="target-info">
+                <span class="target-name" x-text="t.name"></span>
+                <span class="target-badge" :class="t.type" x-text="t.type"></span>
+                <span x-show="t.host" style="font-family:var(--font-mono); font-size:0.78rem; color:var(--text-muted)" x-text="t.host"></span>
+              </div>
+              <!-- Status -->
+              <div class="status-row" x-show="targetStatus[t.name]">
+                <div class="status-item">
+                  <span class="dot" :class="targetStatus[t.name]?.patched ? 'on' : 'off'"></span>
+                  ext.js
+                </div>
+                <div class="status-item">
+                  <span class="dot" :class="targetStatus[t.name]?.cli_patched ? 'on' : 'off'"></span>
+                  cli.js
+                </div>
+                <div class="status-item">
+                  <span class="dot" :class="targetStatus[t.name]?.backup_exists ? 'on' : 'off'"></span>
+                  Backup
+                </div>
+                <div class="status-item">
+                  <span class="dot" :class="targetStatus[t.name]?.config_exists ? 'on' : 'off'"></span>
+                  Settings
+                </div>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-secondary btn-sm" @click="checkStatus(t.name)" :disabled="deployingTarget === t.name" title="Check status">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              </button>
+              <button class="btn btn-primary btn-sm" @click="deploy(t.name)" :disabled="deployingTarget === t.name">
+                <template x-if="deployingTarget === t.name"><span class="spinner"></span></template>
+                <template x-if="deployingTarget !== t.name">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </template>
+                Deploy
+              </button>
+              <button class="btn btn-danger btn-sm" @click="restore(t.name)" :disabled="deployingTarget === t.name" title="Restore backup">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
+              <button x-show="t.type !== 'local'" class="btn btn-ghost btn-sm btn-icon" @click="deleteTarget(t.name)" title="Remove target">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--text-muted)" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <!-- Add target form -->
+        <div class="add-target-form" x-show="showAddTarget" x-transition>
+          <div class="row" style="margin-bottom:10px">
+            <div class="field">
+              <label>Name</label>
+              <input type="text" x-model="newTarget.name" placeholder="my-server">
+            </div>
+            <div class="field">
+              <label>Type</label>
+              <select x-model="newTarget.type">
+                <option value="ssh">SSH</option>
+                <option value="codespace">Codespace</option>
+              </select>
+            </div>
+          </div>
+          <div class="field" style="margin-bottom:10px">
+            <label x-text="newTarget.type === 'codespace' ? 'Codespace Name' : 'SSH Host'"></label>
+            <input type="text" x-model="newTarget.host" :placeholder="newTarget.type === 'codespace' ? 'codespace-name-xxx' : 'user@host'">
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary btn-sm" @click="addTarget()">Add</button>
+            <button class="btn btn-ghost btn-sm" @click="showAddTarget = false">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== TAB: MCP ===== -->
+    <div x-show="tab === 'mcp'" x-transition.opacity.duration.200ms>
+      <div class="card">
+        <div class="row-between" style="margin-bottom:14px">
+          <div class="card-title" style="margin-bottom:0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>
+            MCP Servers
+          </div>
+          <button class="btn btn-secondary btn-sm" @click="addMcpServer()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add
+          </button>
+        </div>
+        <p style="font-size:0.82rem; color:var(--text-dim); margin-bottom:14px">
+          MCP servers will be written to both <code style="color:var(--accent); font-family:var(--font-mono)">~/.claude/settings.json</code> and VSCode's Machine settings on deploy.
+        </p>
+
+        <template x-for="(s, i) in cfg.mcp_servers" :key="i">
+          <div class="mcp-row">
+            <div class="toggle" :class="s.enabled && 'on'" @click="s.enabled = !s.enabled"></div>
+            <span class="mcp-name" x-text="s.name"></span>
+            <span class="mcp-cmd" x-text="s.command + ' ' + (s.args || []).join(' ')"></span>
+            <button class="btn btn-ghost btn-icon" @click="editMcpServer(i)" title="Edit">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="btn btn-ghost btn-icon" @click="removeMcpServer(i)" title="Remove">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--danger)" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </template>
+
+        <div class="empty" x-show="!cfg.mcp_servers || cfg.mcp_servers.length === 0">
+          No MCP servers configured.
+        </div>
+      </div>
+
+      <!-- Edit MCP server inline -->
+      <div class="card" x-show="editingMcp !== null" x-transition>
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          <span x-text="editingMcp !== null ? 'Edit: ' + cfg.mcp_servers[editingMcp]?.name : ''"></span>
+        </div>
+        <div class="row" style="margin-bottom:10px">
+          <div class="field">
+            <label>Name</label>
+            <input type="text" x-model="mcpForm.name">
+          </div>
+          <div class="field">
+            <label>Command</label>
+            <input type="text" x-model="mcpForm.command" placeholder="uvx">
+          </div>
+        </div>
+        <div class="field" style="margin-bottom:10px">
+          <label>Args (space separated)</label>
+          <input type="text" x-model="mcpForm.argsStr" placeholder="mcp-server-fetch">
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary btn-sm" @click="saveMcpEdit()">Save</button>
+          <button class="btn btn-ghost btn-sm" @click="editingMcp = null">Cancel</button>
+        </div>
+      </div>
+
+      <div class="actions" style="margin-top:8px">
+        <button class="btn btn-primary" @click="saveConfig()" :disabled="saving">
+          <template x-if="saving"><span class="spinner"></span></template>
+          Save MCP Config
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function app() {
+      return {
+        tab: 'config',
+        cfg: {
+          api_key: '',
+          base_url: '',
+          model_mappings: [],
+          default_opus_model: '',
+          default_sonnet_model: '',
+          default_haiku_model: '',
+          mcp_servers: [],
+          targets: [],
+          auto_detect: true,
+        },
+        saving: false,
+        detecting: false,
+        detectedModels: [],
+        suggestedMappings: [],
+        suggestedOpus: '',
+        suggestedSonnet: '',
+        suggestedHaiku: '',
+        deployingTarget: null,
+        targetStatus: {},
+        showAddTarget: false,
+        newTarget: { name: '', type: 'ssh', host: '' },
+        editingMcp: null,
+        mcpForm: { name: '', command: '', argsStr: '' },
+
+        toast: { show: false, msg: '', type: 'success' },
+        _toastTimer: null,
+
+        async init() {
+          await this.loadConfig();
+        },
+
+        // ---- Toast ----
+        showToast(msg, type = 'success') {
+          clearTimeout(this._toastTimer);
+          this.toast = { show: true, msg, type };
+          this._toastTimer = setTimeout(() => { this.toast.show = false; }, 3500);
+        },
+
+        // ---- API helpers ----
+        async api(method, path, body) {
+          const opts = { method, headers: { 'Content-Type': 'application/json' } };
+          if (body) opts.body = JSON.stringify(body);
+          const resp = await fetch('/api' + path, opts);
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.message || `HTTP ${resp.status}`);
+          return data;
+        },
+
+        // ---- Config ----
+        async loadConfig() {
+          try {
+            const cfg = await this.api('GET', '/config');
+            this.cfg = cfg;
+          } catch (e) {
+            this.showToast('Failed to load config: ' + e.message, 'error');
+          }
+        },
+
+        async saveConfig() {
+          this.saving = true;
+          try {
+            await this.api('PUT', '/config', this.cfg);
+            this.showToast('Configuration saved');
+          } catch (e) {
+            this.showToast('Save failed: ' + e.message, 'error');
+          } finally {
+            this.saving = false;
+          }
+        },
+
+        // ---- Model detection ----
+        async detectModels() {
+          this.detecting = true;
+          this.detectedModels = [];
+          try {
+            // Save first so backend has creds
+            await this.api('PUT', '/config', this.cfg);
+            const resp = await this.api('GET', '/models/detect');
+            this.detectedModels = resp.models || [];
+            this.suggestedMappings = resp.suggest_mappings || [];
+            this.suggestedOpus = resp.suggest_opus || '';
+            this.suggestedSonnet = resp.suggest_sonnet || '';
+            this.suggestedHaiku = resp.suggest_haiku || '';
+            this.showToast(`Found ${this.detectedModels.length} models`, 'info');
+          } catch (e) {
+            this.showToast('Detection failed: ' + e.message, 'error');
+          } finally {
+            this.detecting = false;
+          }
+        },
+
+        applySuggestedDefaults() {
+          if (this.suggestedOpus) this.cfg.default_opus_model = this.suggestedOpus;
+          if (this.suggestedSonnet) this.cfg.default_sonnet_model = this.suggestedSonnet;
+          if (this.suggestedHaiku) this.cfg.default_haiku_model = this.suggestedHaiku;
+          this.showToast('Applied suggested defaults', 'info');
+        },
+
+        // ---- Mappings ----
+        addMapping() {
+          if (!this.cfg.model_mappings) this.cfg.model_mappings = [];
+          this.cfg.model_mappings.push({ vscode_id: '', relay_id: '' });
+        },
+        removeMapping(i) {
+          this.cfg.model_mappings.splice(i, 1);
+        },
+        resetMappings() {
+          this.cfg.model_mappings = [
+            { vscode_id: 'claude-opus-4.6', relay_id: 'claude-opus-4-6' },
+            { vscode_id: 'claude-sonnet-4.5', relay_id: 'claude-sonnet-4-5-20250929' },
+            { vscode_id: 'claude-haiku-4.5', relay_id: 'claude-haiku-4-5-20251001' },
+          ];
+          this.showToast('Reset to defaults', 'info');
+        },
+        async suggestMappings() {
+          this.detecting = true;
+          try {
+            await this.api('PUT', '/config', this.cfg);
+            const resp = await this.api('GET', '/models/detect');
+            this.detectedModels = resp.models || [];
+            this.suggestedMappings = resp.suggest_mappings || [];
+            this.suggestedOpus = resp.suggest_opus || '';
+            this.suggestedSonnet = resp.suggest_sonnet || '';
+            this.suggestedHaiku = resp.suggest_haiku || '';
+            if (this.detectedModels.length === 0) {
+              this.showToast('No models found', 'error');
+              return;
+            }
+            if (this.suggestedMappings.length > 0) {
+              this.cfg.model_mappings = JSON.parse(JSON.stringify(this.suggestedMappings));
+              this.showToast(`Applied ${this.suggestedMappings.length} suggested mappings`, 'success');
+            } else {
+              this.showToast(`Found ${this.detectedModels.length} models but no mappings matched`, 'info');
+            }
+          } catch (e) {
+            this.showToast('Detection failed: ' + e.message, 'error');
+          } finally {
+            this.detecting = false;
+          }
+        },
+
+        // ---- Targets ----
+        async addTarget() {
+          if (!this.newTarget.name || !this.newTarget.host) {
+            this.showToast('Name and host are required', 'error');
+            return;
+          }
+          try {
+            await this.api('POST', '/targets', this.newTarget);
+            await this.loadConfig();
+            this.newTarget = { name: '', type: 'ssh', host: '' };
+            this.showAddTarget = false;
+            this.showToast('Target added');
+          } catch (e) {
+            this.showToast(e.message, 'error');
+          }
+        },
+        async deleteTarget(name) {
+          if (!confirm(`Remove target "${name}"?`)) return;
+          try {
+            await this.api('DELETE', '/targets/' + encodeURIComponent(name));
+            await this.loadConfig();
+            this.showToast('Target removed');
+          } catch (e) {
+            this.showToast(e.message, 'error');
+          }
+        },
+        async deploy(name) {
+          this.deployingTarget = name;
+          try {
+            // Save config first
+            await this.api('PUT', '/config', this.cfg);
+            const result = await this.api('POST', '/deploy', { target_name: name });
+            this.showToast(result.message || 'Deployed!', 'success');
+            await this.checkStatus(name);
+          } catch (e) {
+            this.showToast('Deploy failed: ' + e.message, 'error');
+          } finally {
+            this.deployingTarget = null;
+          }
+        },
+        async checkStatus(name) {
+          try {
+            const status = await this.api('POST', '/deploy/status', { target_name: name });
+            this.targetStatus[name] = status;
+          } catch (e) {
+            this.showToast('Status check failed: ' + e.message, 'error');
+          }
+        },
+        async restore(name) {
+          if (!confirm(`Restore backup on "${name}"? This will undo the patch.`)) return;
+          this.deployingTarget = name;
+          try {
+            const result = await this.api('POST', '/deploy/restore', { target_name: name });
+            this.showToast(result.message || 'Restored', 'success');
+            await this.checkStatus(name);
+          } catch (e) {
+            this.showToast('Restore failed: ' + e.message, 'error');
+          } finally {
+            this.deployingTarget = null;
+          }
+        },
+
+        // ---- MCP ----
+        addMcpServer() {
+          if (!this.cfg.mcp_servers) this.cfg.mcp_servers = [];
+          this.cfg.mcp_servers.push({ name: 'new-server', enabled: true, command: '', args: [] });
+          this.editMcpServer(this.cfg.mcp_servers.length - 1);
+        },
+        editMcpServer(i) {
+          const s = this.cfg.mcp_servers[i];
+          this.mcpForm = {
+            name: s.name,
+            command: s.command,
+            argsStr: (s.args || []).join(' '),
+          };
+          this.editingMcp = i;
+        },
+        saveMcpEdit() {
+          if (this.editingMcp === null) return;
+          const s = this.cfg.mcp_servers[this.editingMcp];
+          s.name = this.mcpForm.name;
+          s.command = this.mcpForm.command;
+          s.args = this.mcpForm.argsStr.trim().split(/\s+/).filter(Boolean);
+          this.editingMcp = null;
+          this.showToast('MCP server updated', 'info');
+        },
+        removeMcpServer(i) {
+          this.cfg.mcp_servers.splice(i, 1);
+        },
+
+        // ---- Clipboard ----
+        async copyToClipboard(text) {
+          try {
+            await navigator.clipboard.writeText(text);
+            this.showToast('Copied: ' + text, 'info');
+          } catch {
+            this.showToast('Copy failed', 'error');
+          }
+        },
+      };
+    }
+  </script>
+</body>
+</html>
