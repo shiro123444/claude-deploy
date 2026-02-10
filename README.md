@@ -138,6 +138,13 @@ make cross
 ### MCP 管理 - MCP Servers 配置
 ![MCP 管理](picture/4.png)
 
+## 更新日志
+
+### v1.1
+
+- **修复 CLI 重复部署失败** — 二次部署时从干净备份恢复 `cli.js`，避免函数级 patch 残留导致签名匹配失败
+- **修复 API Key 掩码回写** — 引入精确掩码检测与哨兵值，防止截断的掩码 key 被误存为真实 key
+
 ## License
 
 MIT

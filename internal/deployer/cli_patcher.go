@@ -167,22 +167,31 @@ func discoverCLIPatchPoints(content string) []cliPatchPoint {
 //  3. Must use globalThis.* to ensure variables are accessible across all scopes
 //  4. Injection point is BEFORE the first import statement at file top level
 func PatchCLI(path string, mappings map[string]string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read cli.js: %w", err)
-	}
-	content := string(data)
-
-	// Remove existing patch if present
-	content = removeCLIPatch(content)
-
-	// Create backup (only if none exists)
 	backupPath := path + ".claude-relay-backup"
-	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
+
+	// If a backup exists, always restore from the clean backup first.
+	// removeCLIPatch() only strips the header injection but NOT the function-level
+	// patches (e.g., globalThis.__cliMap wrappers inside Gu, g81, nH).
+	// Re-deploying on an already-patched file causes discoverCLIPatchPoints() to
+	// fail because the original function signatures no longer match.
+	var data []byte
+	var err error
+	if _, statErr := os.Stat(backupPath); statErr == nil {
+		data, err = os.ReadFile(backupPath)
+		if err != nil {
+			return fmt.Errorf("read cli.js backup: %w", err)
+		}
+	} else {
+		data, err = os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read cli.js: %w", err)
+		}
+		// Create backup from the original clean file
 		if err := os.WriteFile(backupPath, data, 0644); err != nil {
 			return fmt.Errorf("create cli.js backup: %w", err)
 		}
 	}
+	content := string(data)
 
 	// Build the model map JS
 	modelMapJS := cliPatchMarker + buildCLIModelMap(mappings)

@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"claude-relay/internal/config"
 	"claude-relay/internal/deployer"
@@ -25,6 +26,22 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, apiResponse{Status: "error", Message: msg})
 }
 
+const maskedKeyPlaceholder = "__MASKED__"
+
+// isMaskedKey returns true if the key looks like it was masked by handleGetConfig
+// (i.e. a short prefix followed by asterisks).
+func isMaskedKey(key string) bool {
+	if len(key) == 0 {
+		return false
+	}
+	// Find first asterisk; everything after must also be asterisks.
+	starIdx := strings.Index(key, "*")
+	if starIdx < 1 {
+		return false
+	}
+	return strings.Count(key[starIdx:], "*") == len(key)-starIdx
+}
+
 // --- Config ---
 
 func handleGetConfig(w http.ResponseWriter, r *http.Request) {
@@ -33,9 +50,12 @@ func handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
-	// Mask API key
-	if len(cfg.APIKey) > 10 {
-		cfg.APIKey = cfg.APIKey[:7] + "****"
+	// Mask API key — show prefix for identification but use a fixed sentinel
+	// so the frontend can never accidentally save the truncated value as the real key.
+	if len(cfg.APIKey) > 8 {
+		cfg.APIKey = cfg.APIKey[:8] + strings.Repeat("*", len(cfg.APIKey)-8)
+	} else if len(cfg.APIKey) > 0 {
+		cfg.APIKey = maskedKeyPlaceholder
 	}
 	writeJSON(w, 200, cfg)
 }
@@ -47,8 +67,9 @@ func handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If masked key sent back, preserve the original
-	if len(cfg.APIKey) > 4 && cfg.APIKey[len(cfg.APIKey)-4:] == "****" {
+	// If the key looks masked (contains only asterisks after a prefix, or is
+	// the placeholder sentinel), preserve the original key from disk.
+	if cfg.APIKey == maskedKeyPlaceholder || isMaskedKey(cfg.APIKey) {
 		existing, _ := config.Load()
 		if existing != nil {
 			cfg.APIKey = existing.APIKey
