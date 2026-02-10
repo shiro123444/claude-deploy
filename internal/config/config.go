@@ -66,6 +66,7 @@ func defaultConfig() *models.Config {
 		MCPServers: []models.MCPServer{
 			{Name: "fetch", Enabled: true, Command: "uvx", Args: []string{"mcp-server-fetch"}},
 			{Name: "deepwiki", Enabled: true, Command: "npx", Args: []string{"-y", "mcp-deepwiki@latest"}},
+			{Name: "filesystem", Enabled: true, Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", "/home/shiro"}},
 		},
 		Targets: []models.Target{
 			{Name: "local", Type: models.TargetLocal},

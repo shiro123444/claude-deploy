@@ -107,6 +107,13 @@ func discoverCLIPatchPoints(content string) []cliPatchPoint {
 						if callEnd > 0 {
 							old = snippet[:braceIdx+letIdx+callEnd+3]
 							new := snippet[:braceIdx+1] + "B.model=globalThis.__cliMap(B.model);" + snippet[braceIdx+1:braceIdx+letIdx+callEnd+3]
+
+							// If the snippet is already patched, avoid double-patching.
+							// Use the patched content as both Old and New to count it as applied.
+							if strings.Contains(old, "globalThis.__cliMap") {
+								new = old
+							}
+
 							points = append(points, cliPatchPoint{
 								Name:    "streaming-generator",
 								Old:     old,
@@ -127,12 +134,20 @@ func discoverCLIPatchPoints(content string) []cliPatchPoint {
 	// This function strips ANSI codes and is used in model:Gu(X) calls.
 	// We wrap the return value with globalThis.__cliMap().
 	ansiPattern := `function Gu(A){return A.replace(/\[(1|2)m\]/gi,"")}`
+	ansiPatched := `function Gu(A){return globalThis.__cliMap(A.replace(/\[(1|2)m\]/gi,""))}`
 	if strings.Contains(content, ansiPattern) {
 		points = append(points, cliPatchPoint{
 			Name:    "ansi-strip-model",
 			Old:     ansiPattern,
-			New:     `function Gu(A){return globalThis.__cliMap(A.replace(/\[(1|2)m\]/gi,""))}`,
+			New:     ansiPatched,
 			Comment: "Wrap ANSI strip function return with model mapping (used as model:Gu(X))",
+		})
+	} else if strings.Contains(content, ansiPatched) {
+		points = append(points, cliPatchPoint{
+			Name:    "ansi-strip-model-patched",
+			Old:     ansiPatched,
+			New:     ansiPatched,
+			Comment: "Already patched",
 		})
 	}
 
@@ -140,12 +155,20 @@ func discoverCLIPatchPoints(content string) []cliPatchPoint {
 	// Pattern: async function nH({apiKey:A,maxRetries:Q,model:B,fetchOverride:G}){let Z=
 	// This creates the Anthropic SDK client. We inject B=globalThis.__cliMap(B||"") at entry.
 	clientPattern := `async function nH({apiKey:A,maxRetries:Q,model:B,fetchOverride:G}){let Z=`
+	clientPatched := `async function nH({apiKey:A,maxRetries:Q,model:B,fetchOverride:G}){B=globalThis.__cliMap(B||"");let Z=`
 	if strings.Contains(content, clientPattern) {
 		points = append(points, cliPatchPoint{
 			Name:    "client-factory",
 			Old:     clientPattern,
-			New:     `async function nH({apiKey:A,maxRetries:Q,model:B,fetchOverride:G}){B=globalThis.__cliMap(B||"");let Z=`,
+			New:     clientPatched,
 			Comment: "Map model ID at entry of Anthropic SDK client factory",
+		})
+	} else if strings.Contains(content, clientPatched) {
+		points = append(points, cliPatchPoint{
+			Name:    "client-factory-patched",
+			Old:     clientPatched,
+			New:     clientPatched,
+			Comment: "Already patched",
 		})
 	}
 
@@ -192,6 +215,23 @@ func PatchCLI(path string, mappings map[string]string) error {
 		}
 	}
 	content := string(data)
+
+	// Remove existing patch header if present (handles dirty backups)
+	if start := strings.Index(content, cliPatchMarker); start >= 0 {
+		// Look for the import statement that follows
+		importMarkers := []string{"import{createRequire", "import "}
+		var end int = -1
+		for _, m := range importMarkers {
+			if idx := strings.Index(content[start:], m); idx >= 0 {
+				end = idx
+				break
+			}
+		}
+
+		if end > 0 {
+			content = content[:start] + content[start+end:]
+		}
+	}
 
 	// Build the model map JS
 	modelMapJS := cliPatchMarker + buildCLIModelMap(mappings)
