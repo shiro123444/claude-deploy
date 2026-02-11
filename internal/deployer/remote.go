@@ -39,19 +39,7 @@ func remoteExec(target models.Target, command string) (string, error) {
 
 // deployRemote handles deployment to SSH or Codespace targets.
 func deployRemote(target models.Target, cfg *models.Config) error {
-	// 1. Find extension.js on remote
-	findCmd := `ls -t ~/.vscode-server/extensions/github.copilot-chat-*/dist/extension.js 2>/dev/null | head -1 || ` +
-		`ls -t ~/.vscode-remote/extensions/github.copilot-chat-*/dist/extension.js 2>/dev/null | head -1`
-	extPath, err := remoteExec(target, findCmd)
-	if err != nil || extPath == "" {
-		return fmt.Errorf("extension.js not found on %s: %v", target.Name, err)
-	}
-
-	// 2. Create backup (only if none exists)
-	backupPath := extPath + ".claude-relay-backup"
-	remoteExec(target, fmt.Sprintf("test -f '%s' || cp '%s' '%s'", backupPath, extPath, backupPath))
-
-	// 3. Remove old patch and append new one
+	// 1. Build mappings
 	mappings := make(map[string]string)
 	for _, m := range cfg.ModelMappings {
 		mappings[m.VSCodeID] = m.RelayID
@@ -65,45 +53,41 @@ func deployRemote(target models.Target, cfg *models.Config) error {
 	sort.Strings(pairs)
 	jsMap := strings.Join(pairs, ",")
 
-	// Use sed to remove old patch, then append new one via heredoc
-	patchCmd := fmt.Sprintf(
-		`sed -i '/%s/,/%s/d' '%s' && cat >> '%s' << 'EOFPATCH'
-%s
-;(function(){var m={%s};var _s=JSON.stringify;JSON.stringify=function(o){if(o&&o.model&&m[o.model])o.model=m[o.model];return _s.apply(this,arguments)};})();
-%s
-EOFPATCH`,
-		strings.ReplaceAll(patchMarker, "*", "\\*"),
-		strings.ReplaceAll(patchMarkerEnd, "*", "\\*"),
-		extPath,
-		extPath,
-		patchMarker,
-		jsMap,
-		patchMarkerEnd,
-	)
-	if _, err := remoteExec(target, patchCmd); err != nil {
-		return fmt.Errorf("patch failed: %w", err)
+	// 2. Find extension.js and restore if patched (cleanup legacy patches)
+	//    NOTE: We NO LONGER patch extension.js because it affects ALL Copilot models
+	findCmd := `ls -t ~/.vscode-server/extensions/github.copilot-chat-*/dist/extension.js 2>/dev/null | head -1 || ` +
+		`ls -t ~/.vscode-remote/extensions/github.copilot-chat-*/dist/extension.js 2>/dev/null | head -1`
+	extPath, _ := remoteExec(target, findCmd)
+	if extPath != "" {
+		backupPath := extPath + ".claude-relay-backup"
+		// Check if patched and backup exists, then restore
+		checkCmd := fmt.Sprintf("grep -q 'claude-relay-patch-begin' '%s' && test -f '%s' && cp '%s' '%s' && echo restored || echo skip", extPath, backupPath, backupPath, extPath)
+		remoteExec(target, checkCmd)
 	}
 
-	// 5. Find and patch cli.js on remote
-	//    CRITICAL: cli.js is the file that ACTUALLY makes API calls in Agent mode.
-	//    Without this, Agent mode sends unmapped model IDs to the relay.
+	// 3. Find and patch cli.js on remote
+	//    CRITICAL: cli.js is the ONLY file that should be patched.
+	//    It handles actual API calls in Agent mode and is isolated to Claude Agent.
 	findCLICmd := `ls -t ~/.vscode-server/extensions/github.copilot-chat-*/dist/cli.js 2>/dev/null | head -1 || ` +
 		`ls -t ~/.vscode-remote/extensions/github.copilot-chat-*/dist/cli.js 2>/dev/null | head -1`
 	cliPath, cliErr := remoteExec(target, findCLICmd)
-	if cliErr == nil && cliPath != "" {
-		// Create backup
-		cliBackup := cliPath + ".claude-relay-backup"
-		remoteExec(target, fmt.Sprintf("test -f '%s' || cp '%s' '%s'", cliBackup, cliPath, cliBackup))
+	if cliErr != nil || cliPath == "" {
+		return fmt.Errorf("cli.js not found on %s: %v", target.Name, cliErr)
+	}
 
-		// Build globalThis model map for cli.js
-		cliMapJS := fmt.Sprintf(
-			`globalThis.__cliModelMap={%s};globalThis.__cliMap=function(m){return(globalThis.__cliModelMap[m]||m)};`,
-			jsMap,
-		)
+	// Create backup (only if none exists)
+	cliBackup := cliPath + ".claude-relay-backup"
+	remoteExec(target, fmt.Sprintf("test -f '%s' || cp '%s' '%s'", cliBackup, cliPath, cliBackup))
 
-		// Inject model map at file header (before first import)
-		// Then patch known function patterns
-		cliPatchCmd := fmt.Sprintf(`python3 -c "
+	// Build globalThis model map for cli.js
+	cliMapJS := fmt.Sprintf(
+		`globalThis.__cliModelMap={%s};globalThis.__cliMap=function(m){return(globalThis.__cliModelMap[m]||m)};`,
+		jsMap,
+	)
+
+	// Inject model map at file header (before first import)
+	// Then patch known function patterns
+	cliPatchCmd := fmt.Sprintf(`python3 -c "
 import sys
 with open('%s','r') as f: c=f.read()
 marker='/* claude-relay-cli-patch */'
@@ -122,13 +106,11 @@ with open('%s','w') as f: f.write(c)
 print('cli.js patched')
 " 2>&1`, cliPath, cliMapJS, cliPath)
 
-		if _, err := remoteExec(target, cliPatchCmd); err != nil {
-			// cli.js patch failure is non-fatal but should be reported
-			fmt.Printf("Warning: cli.js patch failed on %s: %v\n", target.Name, err)
-		}
+	if _, err := remoteExec(target, cliPatchCmd); err != nil {
+		return fmt.Errorf("cli.js patch failed: %w", err)
 	}
 
-	// 6. Write claude settings remotely
+	// 4. Write claude settings remotely
 	settingsJSON, err := GenerateClaudeSettingsJSON(cfg)
 	if err != nil {
 		return fmt.Errorf("generate settings: %w", err)
@@ -145,43 +127,63 @@ print('cli.js patched')
 func statusRemote(target models.Target) (*models.DeployStatus, error) {
 	status := &models.DeployStatus{Target: target.Name}
 
-	// Find extension
+	// Check extension.js for legacy patch status
 	findCmd := `ls -t ~/.vscode-server/extensions/github.copilot-chat-*/dist/extension.js 2>/dev/null | head -1 || ` +
 		`ls -t ~/.vscode-remote/extensions/github.copilot-chat-*/dist/extension.js 2>/dev/null | head -1`
 	extPath, _ := remoteExec(target, findCmd)
 	if extPath == "" {
 		status.ExtPath = "not found"
-		return status, nil
+	} else {
+		status.ExtPath = extPath
+		// Note: Patched=true here means legacy patch exists and should be cleaned up
+		out, _ := remoteExec(target, fmt.Sprintf("grep -c 'claude-relay-patch-begin' '%s' 2>/dev/null || echo 0", extPath))
+		status.Patched = out != "0"
+		out, _ = remoteExec(target, fmt.Sprintf("test -f '%s.claude-relay-backup' && echo yes || echo no", extPath))
+		status.BackupExists = out == "yes"
 	}
-	status.ExtPath = extPath
 
-	// Check patch
-	out, _ := remoteExec(target, fmt.Sprintf("grep -c 'claude-relay-patch-begin' '%s' 2>/dev/null || echo 0", extPath))
-	status.Patched = out != "0"
-
-	// Check backup
-	out, _ = remoteExec(target, fmt.Sprintf("test -f '%s.claude-relay-backup' && echo yes || echo no", extPath))
-	status.BackupExists = out == "yes"
+	// Check cli.js patch status (this is the main patch)
+	findCLICmd := `ls -t ~/.vscode-server/extensions/github.copilot-chat-*/dist/cli.js 2>/dev/null | head -1 || ` +
+		`ls -t ~/.vscode-remote/extensions/github.copilot-chat-*/dist/cli.js 2>/dev/null | head -1`
+	cliPath, _ := remoteExec(target, findCLICmd)
+	if cliPath != "" {
+		status.CLIPath = cliPath
+		out, _ := remoteExec(target, fmt.Sprintf("grep -c 'claude-relay-cli-patch' '%s' 2>/dev/null || echo 0", cliPath))
+		status.CLIPatched = out != "0"
+		out, _ = remoteExec(target, fmt.Sprintf("test -f '%s.claude-relay-backup' && echo yes || echo no", cliPath))
+		status.CLIBackupExists = out == "yes"
+	}
 
 	// Check config
-	out, _ = remoteExec(target, "test -f ~/.claude/settings.json && echo yes || echo no")
+	out, _ := remoteExec(target, "test -f ~/.claude/settings.json && echo yes || echo no")
 	status.ConfigExists = out == "yes"
 
 	return status, nil
 }
 
-// restoreRemote restores extension.js backup on a remote target.
+// restoreRemote restores backups on a remote target.
 func restoreRemote(target models.Target) error {
-	findCmd := `ls -t ~/.vscode-server/extensions/github.copilot-chat-*/dist/extension.js 2>/dev/null | head -1 || ` +
+	// Restore extension.js if backup exists (legacy cleanup)
+	findExtCmd := `ls -t ~/.vscode-server/extensions/github.copilot-chat-*/dist/extension.js 2>/dev/null | head -1 || ` +
 		`ls -t ~/.vscode-remote/extensions/github.copilot-chat-*/dist/extension.js 2>/dev/null | head -1`
-	extPath, err := remoteExec(target, findCmd)
-	if err != nil || extPath == "" {
-		return fmt.Errorf("extension.js not found on %s", target.Name)
+	extPath, _ := remoteExec(target, findExtCmd)
+	if extPath != "" {
+		backupPath := extPath + ".claude-relay-backup"
+		remoteExec(target, fmt.Sprintf("test -f '%s' && cp '%s' '%s'", backupPath, backupPath, extPath))
 	}
 
-	backupPath := extPath + ".claude-relay-backup"
-	if _, err := remoteExec(target, fmt.Sprintf("test -f '%s' && cp '%s' '%s'", backupPath, backupPath, extPath)); err != nil {
-		return fmt.Errorf("restore failed: %w", err)
+	// Restore cli.js (this is the main patch)
+	findCLICmd := `ls -t ~/.vscode-server/extensions/github.copilot-chat-*/dist/cli.js 2>/dev/null | head -1 || ` +
+		`ls -t ~/.vscode-remote/extensions/github.copilot-chat-*/dist/cli.js 2>/dev/null | head -1`
+	cliPath, err := remoteExec(target, findCLICmd)
+	if err != nil || cliPath == "" {
+		return fmt.Errorf("cli.js not found on %s", target.Name)
 	}
+
+	cliBackup := cliPath + ".claude-relay-backup"
+	if _, err := remoteExec(target, fmt.Sprintf("test -f '%s' && cp '%s' '%s'", cliBackup, cliBackup, cliPath)); err != nil {
+		return fmt.Errorf("restore cli.js failed: %w", err)
+	}
+
 	return nil
 }
